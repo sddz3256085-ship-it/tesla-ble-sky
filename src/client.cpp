@@ -244,7 +244,8 @@ int Client::build_remove_key_message(const pb_byte_t *public_key, size_t public_
   }
 
   VCSEC_PublicKey pub_key = VCSEC_PublicKey_init_default;
-  pub_key.has_PublicKeyRaw = true;
+  /* [239修复] VCSEC_PublicKey 没有 has_PublicKeyRaw 字段 (PublicKeyRaw 是固定字段非 optional),
+   * 删除 pub_key.has_PublicKeyRaw = true; 行, 直接设置 PublicKeyRaw 即可。 */
   std::copy_n(public_key, public_key_size, pub_key.PublicKeyRaw.bytes);
   pub_key.PublicKeyRaw.size = public_key_size;
 
