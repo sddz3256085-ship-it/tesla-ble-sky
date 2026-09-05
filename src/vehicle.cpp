@@ -971,6 +971,64 @@ void Vehicle::pair(Keys_Role role) {
                });
 }
 
+/**
+ * pair_direct — 100% 复制 tesla-esp-c3 配对方案
+ *
+ * 与 pair() 的关键差异:
+ *   1. 绕开 send_command 状态机(不进 WAITING_FOR_RESPONSE, 不超时重试)
+ *   2. 直接 build_white_list_message + ble_adapter_->write
+ *   3. 发送后立即返回, 不等待响应(配对请求触发车端屏幕确认, 不需要 BLE 响应)
+ *   4. 默认 form_factor=CLOUD_KEY(=9), tesla-esp-c3 实测成功
+ *
+ * tesla-esp-c3 参考: tesla_ble_add_key_request() (tesla_ble.c:1004-1064)
+ *   - tesla_build_add_key_request(role=OWNER, form=CLOUD_KEY)
+ *   - send_message(buf, len)
+ *   - return ESP_OK (不等响应)
+ */
+void Vehicle::pair_direct(Keys_Role role, VCSEC_KeyFormFactor form_factor) {
+  LOG_INFO("Initiating direct pairing (tesla-esp-c3 mode)...");
+
+  // 1. 确保私钥已生成/加载
+  if (!client_->has_private_key()) {
+    LOG_INFO("No private key loaded, creating a new one");
+    if (client_->create_private_key() != 0) {
+      LOG_ERROR("Failed to create private key for pairing");
+      return;
+    }
+  }
+  // 2. 持久化私钥到 NVS
+  if (!persist_private_key_()) {
+    LOG_ERROR("Cannot start pairing without persisted private key");
+    return;
+  }
+
+  // 3. 检查 BLE 是否已连接
+  if (!is_connected_) {
+    LOG_ERROR("BLE not connected - cannot send pairing request");
+    return;
+  }
+
+  // 4. 直接构建配对消息(不经 send_command 状态机)
+  uint8_t buffer[256];
+  size_t len = sizeof(buffer);
+  if (client_->build_white_list_message(role, form_factor, buffer, &len) != 0) {
+    LOG_ERROR("Failed to build whitelist message for pairing");
+    return;
+  }
+
+  // 5. 直接写入 BLE(不经命令队列)
+  std::vector<uint8_t> data(buffer, buffer + len);
+  if (ble_adapter_->write(data)) {
+    LOG_INFO("Pairing request sent directly (%zu bytes, role=%d, form_factor=%d) - waiting for vehicle screen confirmation",
+             data.size(), (int)role, (int)form_factor);
+    LOG_INFO("Note: Pairing requires user confirmation on vehicle screen with NFC card");
+    // 与 tesla-esp-c3 一致: 发送后立即返回, 不等响应
+    // 成功通过稍后尝试连接/会话来验证
+  } else {
+    LOG_ERROR("Failed to write pairing request to BLE");
+  }
+}
+
 void Vehicle::regenerate_key() {
   LOG_INFO("Regenerating private key...");
   if (client_->create_private_key() != 0) { LOG_ERROR("Failed to create private key"); return; }
