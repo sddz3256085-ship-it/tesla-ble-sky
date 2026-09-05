@@ -134,6 +134,20 @@ class Vehicle {
   void pair(Keys_Role role = Keys_Role_ROLE_OWNER);
   void regenerate_key();
 
+  /**
+   * @brief 直接配对 — 绕开 send_command 状态机, 100% 复制 tesla-esp-c3 方案
+   *
+   * 与 pair() 的区别:
+   *   - pair() 经 send_command → WAITING_FOR_RESPONSE → 超时重试(配对请求不需要响应, 会误判失败)
+   *   - pair_direct() 直接 build_white_list_message + ble_adapter_->write, 发送后立即返回
+   *   - 与 tesla-esp-c3 tesla_ble_add_key_request 行为完全一致
+   *
+   * @param role 钥匙角色(默认 ROLE_OWNER)
+   * @param form_factor 钥匙形态(默认 CLOUD_KEY=9, tesla-esp-c3 实测成功)
+   */
+  void pair_direct(Keys_Role role = Keys_Role_ROLE_OWNER,
+                   VCSEC_KeyFormFactor form_factor = VCSEC_KeyFormFactor_KEY_FORM_FACTOR_CLOUD_KEY);
+
   /* [239 新增] 从白名单删除指定公钥(需要已认证 OWNER 会话) */
   void remove_key(const pb_byte_t *public_key, size_t public_key_size);
 
